@@ -44,7 +44,10 @@ Compare the result with the current version in `.claude-plugin/plugin.json`.
     }]
   }
   ```
-  - If "Update now": run `claude plugin update ouroboros` via Bash, then tell the user: "Updated! Restart Claude Code to apply, then run `ooo interview` again."
+  - If "Update now": run both commands via Bash:
+    1. `claude plugin update ouroboros` (update plugin/skills)
+    2. `uv tool upgrade ouroboros-ai` (update MCP server)
+    Then tell the user: "Updated! Restart Claude Code to apply, then run `ooo interview` again."
   - If "Skip": proceed immediately.
 - If versions match or the check fails (network error, timeout): **silently skip** and proceed.
 
