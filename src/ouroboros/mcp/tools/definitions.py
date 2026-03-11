@@ -1072,7 +1072,7 @@ class InterviewHandler:
 
         # Use injected or create interview engine
         engine = self.interview_engine or InterviewEngine(
-            llm_adapter=ClaudeCodeAdapter(max_turns=3),
+            llm_adapter=ClaudeAgentAdapter(permission_mode="bypassPermissions"),
             state_dir=Path.home() / ".ouroboros" / "data",
         )
 

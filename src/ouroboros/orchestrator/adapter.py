@@ -28,7 +28,7 @@ from ouroboros.core.types import Result
 from ouroboros.observability.logging import get_logger
 
 if TYPE_CHECKING:
-    pass
+    from ouroboros.providers.base import CompletionConfig, CompletionResponse, Message
 
 log = get_logger(__name__)
 
@@ -458,6 +458,91 @@ class ClaudeAgentAdapter:
             content=content,
             tool_name=tool_name,
             data=data,
+        )
+
+    async def complete(
+        self,
+        messages: list[Message],
+        config: CompletionConfig,
+    ) -> Result[CompletionResponse, ProviderError]:
+        """LLMAdapter-compatible completion interface.
+
+        Bridges ClaudeAgentAdapter to the LLMAdapter protocol so it can be
+        used by InterviewEngine and other components that expect complete().
+
+        Args:
+            messages: Conversation messages (system, user, assistant).
+            config: Completion configuration (model, temperature, etc.).
+
+        Returns:
+            Result containing CompletionResponse or ProviderError.
+        """
+        from ouroboros.providers.base import (
+            CompletionResponse,
+            MessageRole,
+            UsageInfo,
+        )
+
+        # Extract system prompt from messages
+        system_msgs = [m for m in messages if m.role == MessageRole.SYSTEM]
+        non_system_msgs = [m for m in messages if m.role != MessageRole.SYSTEM]
+        system_prompt = system_msgs[0].content if system_msgs else None
+
+        # Build prompt from non-system messages.
+        # For the first interview round, conversation_history is empty
+        # so we must provide a minimal user prompt to prevent execute_task()
+        # from early-returning. The system_prompt carries the full context.
+        prompt_parts: list[str] = []
+        for m in non_system_msgs:
+            prompt_parts.append(f"[{m.role.value}]\n{m.content}")
+        prompt = "\n\n".join(prompt_parts) if prompt_parts else "Proceed."
+
+        # Allow read-only tools so the LLM can explore the codebase
+        # when generating interview questions for brownfield projects.
+        tools = ["Read", "Glob", "Grep"]
+        assistant_texts: list[str] = []
+        error_content: str | None = None
+
+        async for message in self.execute_task(
+            prompt=prompt,
+            tools=tools,
+            system_prompt=system_prompt,
+        ):
+            if message.type == "assistant" and message.content:
+                assistant_texts.append(message.content)
+            elif message.is_final and message.is_error:
+                error_content = message.content
+
+        if error_content:
+            return Result.err(
+                ProviderError(
+                    message=error_content,
+                    details={"assistant_texts": assistant_texts},
+                )
+            )
+
+        # Use the last assistant message as the primary content
+        content = assistant_texts[-1] if assistant_texts else ""
+
+        if not content:
+            return Result.err(
+                ProviderError(
+                    message="Empty response from Claude Agent SDK",
+                    details={"message_count": len(assistant_texts)},
+                )
+            )
+
+        return Result.ok(
+            CompletionResponse(
+                content=content,
+                model=self._model or "claude-agent-sdk",
+                usage=UsageInfo(
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                ),
+                finish_reason="stop",
+            )
         )
 
     async def execute_task_to_result(

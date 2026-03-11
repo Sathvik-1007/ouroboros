@@ -506,11 +506,13 @@ def create_ouroboros_server(
     from ouroboros.orchestrator.runner import (
         OrchestratorRunner,
     )
-    from ouroboros.providers.claude_code_adapter import ClaudeCodeAdapter
 
     # Create LLM adapter (shared across services)
-    # Default to ClaudeCodeAdapter — uses Max Plan auth, no API key needed.
-    llm_adapter = ClaudeCodeAdapter(max_turns=1)
+    # Use ClaudeAgentAdapter for interview/explore — ClaudeCodeAdapter with
+    # max_turns=1 prevented multi-turn tool use (codebase exploration).
+    # bypassPermissions is safe here: only read-only tools (Read/Glob/Grep)
+    # are used for interview question generation and brownfield exploration.
+    llm_adapter = ClaudeAgentAdapter(permission_mode="bypassPermissions")
 
     # Create or use provided EventStore
     if event_store is None:
