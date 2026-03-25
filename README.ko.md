@@ -112,7 +112,7 @@ Ouroboros는 이 철학을 **Double Diamond** 구조로 풀어냅니다:
 **설치** — 한 줄이면 전부 자동:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Q00/ouroboros/release/0.26.0-beta/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Q00/ouroboros/main/scripts/install.sh | bash
 ```
 
 **시작** — AI 코딩 에이전트를 열고 바로:

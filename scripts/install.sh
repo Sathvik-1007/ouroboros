@@ -1,7 +1,6 @@
 #!/bin/bash
 # Ouroboros installer — auto-detects runtime and installs accordingly.
-# Usage: curl -fsSL https://raw.githubusercontent.com/Q00/ouroboros/release/0.26.0-beta/scripts/install.sh | bash
-# TODO: Change URL back to main branch when 0.26.0 is officially released
+# Usage: curl -fsSL https://raw.githubusercontent.com/Q00/ouroboros/main/scripts/install.sh | bash
 set -euo pipefail
 
 PACKAGE_NAME="ouroboros-ai"

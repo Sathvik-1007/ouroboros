@@ -84,7 +84,7 @@ Most AI coding fails at the **input**, not the output. The bottleneck is not AI 
 **Install** — one command, everything auto-detected:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Q00/ouroboros/release/0.26.0-beta/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Q00/ouroboros/main/scripts/install.sh | bash
 ```
 
 **Build** — open your AI coding agent and go:
