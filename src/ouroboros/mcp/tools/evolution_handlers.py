@@ -9,11 +9,13 @@ Contains handlers for evolutionary loop operations:
 
 from dataclasses import dataclass, field
 import os
+from pathlib import Path
 from typing import Any
 
 import structlog
 import yaml
 
+from ouroboros.core.project_paths import resolve_path_against_base, resolve_seed_project_path
 from ouroboros.core.seed import Seed
 from ouroboros.core.text import truncate_head_tail
 from ouroboros.core.types import Result
@@ -24,6 +26,7 @@ from ouroboros.core.worktree import (
     maybe_restore_task_workspace,
     release_lock,
 )
+from ouroboros.evaluation.verification_artifacts import build_verification_artifacts
 from ouroboros.mcp.errors import MCPServerError, MCPToolError
 from ouroboros.mcp.job_manager import JobLinks, JobManager
 from ouroboros.mcp.types import (
@@ -37,6 +40,57 @@ from ouroboros.mcp.types import (
 from ouroboros.persistence.event_store import EventStore
 
 log = structlog.get_logger(__name__)
+
+
+def _resolve_verification_working_dir(
+    project_dir: str | None,
+    seed: Seed | None,
+    *,
+    stable_base: Path,
+) -> Path:
+    """Resolve the best project directory for post-run verification."""
+    if project_dir:
+        resolved = resolve_path_against_base(project_dir, stable_base=stable_base)
+        if resolved is not None:
+            return resolved
+
+    return resolve_seed_project_path(seed, stable_base=stable_base) or stable_base
+
+
+def _resolve_evolve_verification_working_dir(
+    explicit_project_dir: str | None,
+    configured_project_dir: str | None,
+    generation_seed: Seed | None,
+    initial_seed: Seed | None,
+) -> Path:
+    """Resolve the best project directory for evolve-step verification."""
+    cwd_base = Path.cwd().resolve()
+    if explicit_project_dir:
+        resolved = resolve_path_against_base(explicit_project_dir, stable_base=cwd_base)
+        if resolved is not None:
+            return resolved
+
+    if configured_project_dir:
+        resolved = resolve_path_against_base(configured_project_dir, stable_base=cwd_base)
+        if resolved is not None:
+            return resolved
+
+    stable_base = (
+        resolve_path_against_base(configured_project_dir, stable_base=cwd_base)
+        or resolve_path_against_base(explicit_project_dir, stable_base=cwd_base)
+        or cwd_base
+    )
+
+    for candidate_seed in (generation_seed, initial_seed):
+        candidate_dir = _resolve_verification_working_dir(
+            None,
+            candidate_seed,
+            stable_base=stable_base,
+        )
+        if candidate_dir != stable_base:
+            return candidate_dir
+
+    return stable_base
 
 
 @dataclass
@@ -185,6 +239,7 @@ class EvolveStepHandler:
         project_dir_token = self.evolutionary_loop.set_project_dir(
             workspace.effective_cwd if workspace else normalized_project_dir
         )
+        resolved_verification_working_dir = Path.cwd()
 
         try:
             # Ensure event store is initialized before evolve_step accesses it
@@ -193,6 +248,14 @@ class EvolveStepHandler:
             result = await self.evolutionary_loop.evolve_step(
                 lineage_id, initial_seed, execute=execute, parallel=parallel
             )
+            if result.is_ok:
+                step = result.value
+                resolved_verification_working_dir = _resolve_evolve_verification_working_dir(
+                    normalized_project_dir,
+                    self.evolutionary_loop.get_project_dir(),
+                    getattr(step.generation_result, "seed", None),
+                    initial_seed,
+                )
         except Exception as e:
             log.error("mcp.tool.evolve_step.error", error=str(e))
             return Result.err(
@@ -301,12 +364,24 @@ class EvolveStepHandler:
                     ac_lines
                 )
 
-            artifact = gen.execution_output or "\n".join(text_lines)
+            execution_artifact = gen.execution_output or "\n".join(text_lines)
+            try:
+                verification = await build_verification_artifacts(
+                    f"{step.lineage.lineage_id}-gen-{gen.generation_number}",
+                    execution_artifact,
+                    resolved_verification_working_dir,
+                )
+                artifact = verification.artifact
+                reference = verification.reference
+            except Exception as e:
+                artifact = execution_artifact
+                reference = f"Verification artifact generation failed: {e}"
             qa_result = await qa_handler.handle(
                 {
                     "artifact": artifact,
                     "artifact_type": "test_output",
                     "quality_bar": quality_bar,
+                    "reference": reference,
                     "seed_content": seed_content or "",
                     "pass_threshold": 0.80,
                 }

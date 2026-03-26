@@ -17,6 +17,7 @@ import structlog
 import yaml
 
 from ouroboros.core.errors import ValidationError
+from ouroboros.core.project_paths import resolve_seed_project_path
 from ouroboros.core.security import InputValidator
 from ouroboros.core.seed import Seed
 from ouroboros.core.types import Result
@@ -27,6 +28,7 @@ from ouroboros.core.worktree import (
     maybe_restore_task_workspace,
     release_lock,
 )
+from ouroboros.evaluation.verification_artifacts import build_verification_artifacts
 from ouroboros.mcp.errors import MCPServerError, MCPToolError
 from ouroboros.mcp.job_manager import JobLinks, JobManager
 from ouroboros.mcp.types import (
@@ -287,6 +289,13 @@ class ExecuteSeedHandler:
                 )
             )
 
+        verification_working_dir = self._resolve_verification_working_dir(
+            seed,
+            resolved_cwd,
+            arguments.get("cwd"),
+            arguments.get(DELEGATED_PARENT_CWD_ARG),
+        )
+
         # Use injected or create orchestrator dependencies
         try:
             runtime_backend = self.agent_runtime_backend
@@ -457,14 +466,27 @@ class ExecuteSeedHandler:
                                 llm_backend=self.llm_backend,
                             )
                             quality_bar = self._derive_quality_bar(_seed)
+                            execution_artifact = self._get_verification_artifact(
+                                result.value.summary,
+                                result.value.final_message,
+                            )
+                            try:
+                                verification = await build_verification_artifacts(
+                                    result.value.execution_id,
+                                    execution_artifact,
+                                    verification_working_dir,
+                                )
+                                artifact = verification.artifact
+                                reference = verification.reference
+                            except Exception as e:
+                                artifact = execution_artifact
+                                reference = f"Verification artifact generation failed: {e}"
                             await qa_handler.handle(
                                 {
-                                    "artifact": self._get_verification_artifact(
-                                        result.value.summary,
-                                        result.value.final_message,
-                                    ),
+                                    "artifact": artifact,
                                     "artifact_type": "test_output",
                                     "quality_bar": quality_bar,
+                                    "reference": reference,
                                     "seed_content": _seed_content,
                                     "pass_threshold": 0.80,
                                 }
@@ -563,6 +585,26 @@ class ExecuteSeedHandler:
         """Derive a quality bar string from seed acceptance criteria."""
         ac_lines = [f"- {ac}" for ac in seed.acceptance_criteria]
         return "The execution must satisfy all acceptance criteria:\n" + "\n".join(ac_lines)
+
+    @staticmethod
+    def _resolve_verification_working_dir(
+        seed: Seed,
+        dispatch_cwd: Path,
+        raw_cwd: Any,
+        delegated_parent_cwd: Any,
+    ) -> Path:
+        """Resolve the best project directory for post-run verification."""
+        if isinstance(raw_cwd, str) and raw_cwd.strip():
+            return dispatch_cwd
+
+        if isinstance(delegated_parent_cwd, str) and delegated_parent_cwd.strip():
+            return Path(delegated_parent_cwd).expanduser().resolve()
+
+        seed_project_dir = resolve_seed_project_path(seed, stable_base=dispatch_cwd)
+        if seed_project_dir is not None:
+            return seed_project_dir
+
+        return dispatch_cwd
 
     @staticmethod
     def _get_verification_artifact(summary: dict[str, Any], final_message: str) -> str:
