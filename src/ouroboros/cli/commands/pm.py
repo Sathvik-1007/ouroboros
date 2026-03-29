@@ -19,8 +19,10 @@ import typer
 from ouroboros.bigbang.interview import InterviewRound
 from ouroboros.cli.formatters import console
 from ouroboros.cli.formatters.panels import print_error, print_info, print_success, print_warning
+from ouroboros.cli.formatters.prompting import multiline_prompt_async
 from ouroboros.config import get_clarification_model
 from ouroboros.core.types import Result
+from ouroboros.observability import LoggingConfig, configure_logging
 
 app = typer.Typer(
     name="pm",
@@ -107,6 +109,10 @@ def pm_command(
 
     if model is None:
         model = get_clarification_model()
+
+    if debug:
+        configure_logging(LoggingConfig(log_level="DEBUG"))
+        print_info("Debug mode enabled - showing verbose logs")
 
     console.print("\n[bold cyan]Ouroboros PM Generator[/] - Product Requirements Document\n")
 
@@ -392,12 +398,13 @@ async def _run_pm_interview(
         opening = engine.get_opening_question()
         console.print(f"\n[bold yellow]?[/] {opening}\n")
 
-        user_answer = console.input("[bold green]> [/]")
+        user_answer = await multiline_prompt_async("Your response")
 
         if not user_answer.strip():
             print_error("No response provided. Exiting.")
             raise typer.Exit(code=1)
 
+        print_info("Starting interview...")
         state_result = await engine.ask_opening_and_start(
             user_response=user_answer,
             brownfield_repos=brownfield_repos if brownfield_repos else None,
@@ -417,6 +424,7 @@ async def _run_pm_interview(
         if state.rounds and state.rounds[-1].user_response is None:
             question = state.rounds[-1].question
         else:
+            print_info("Generating next question...")
             q_result = await engine.ask_next_question(state)
             if q_result.is_err:
                 print_error(f"Question generation failed: {q_result.error}")
@@ -448,7 +456,7 @@ async def _run_pm_interview(
             break
         _save_cli_pm_meta(state.interview_id, engine)
 
-        user_response = console.input("[bold green]> [/]")
+        user_response = await multiline_prompt_async("Your response")
 
         # Allow early exit
         if user_response.strip().lower() in ("done", "exit", "quit", "/done"):
@@ -460,6 +468,8 @@ async def _run_pm_interview(
             complete_result = await engine.complete_interview(state)
             if isinstance(complete_result, Result) and complete_result.is_err:
                 print_error(f"Failed to complete interview: {complete_result.error}")
+            elif isinstance(complete_result, Result):
+                state = complete_result.value
             save_result = await engine.save_state(state)
             if isinstance(save_result, Result) and save_result.is_err:
                 print_error(f"Failed to save completed state: {save_result.error}")
@@ -475,6 +485,8 @@ async def _run_pm_interview(
         if isinstance(record_result, Result) and record_result.is_err:
             print_error(f"Failed to record response: {record_result.error}")
             break
+        if isinstance(record_result, Result):
+            state = record_result.value
         save_result = await engine.save_state(state)
         if isinstance(save_result, Result) and save_result.is_err:
             print_error(f"Failed to save state: {save_result.error}")
