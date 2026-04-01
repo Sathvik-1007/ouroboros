@@ -32,6 +32,7 @@ from ouroboros.core.worktree import (
 from ouroboros.evaluation.verification_artifacts import build_verification_artifacts
 from ouroboros.mcp.errors import MCPServerError, MCPToolError
 from ouroboros.mcp.job_manager import JobLinks, JobManager
+from ouroboros.mcp.tools.bridge_mixin import BridgeAwareMixin
 from ouroboros.mcp.types import (
     ContentType,
     MCPContentItem,
@@ -97,7 +98,7 @@ def _extract_inherited_effective_tools(arguments: dict[str, Any]) -> list[str] |
 
 
 @dataclass
-class ExecuteSeedHandler:
+class ExecuteSeedHandler(BridgeAwareMixin):
     """Handler for the execute_seed tool.
 
     Executes a seed (task specification) in the Ouroboros system.
@@ -394,6 +395,8 @@ class ExecuteSeedHandler:
                     adapter=agent_adapter,
                     event_store=event_store,
                     console=console,
+                    mcp_manager=self.mcp_manager,
+                    mcp_tool_prefix=self.mcp_tool_prefix,
                     debug=False,
                     enable_decomposition=True,
                     inherited_runtime_handle=inherited_runtime_handle,
