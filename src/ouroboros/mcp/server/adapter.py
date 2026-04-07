@@ -23,7 +23,7 @@ from ouroboros.mcp.errors import (
     MCPToolError,
 )
 from ouroboros.mcp.server.protocol import PromptHandler, ResourceHandler, ToolHandler
-from ouroboros.mcp.server.security import AuthConfig, RateLimitConfig, SecurityLayer
+from ouroboros.mcp.server.security import AuthConfig, AuthMethod, RateLimitConfig, SecurityLayer
 from ouroboros.mcp.types import (
     MCPCapabilities,
     MCPPromptDefinition,
@@ -537,8 +537,20 @@ class MCPServerAdapter:
             transport: Transport type - "stdio" or "sse" (case-insensitive).
             host: Host to bind to (SSE only). Defaults to "localhost".
             port: Port to bind to (SSE only). Defaults to 8080.
+
+        Raises:
+            ValueError: If transport is invalid or incompatible with security config.
         """
         transport = validate_transport(transport)
+
+        # FastMCP transport cannot provide credentials, so auth will fail
+        if self._security.auth_config.method != AuthMethod.NONE:
+            msg = (
+                f"FastMCP transport does not support authentication. "
+                f"Configured auth method: {self._security.auth_config.method.value}. "
+                f"All tool calls will be rejected. Use AuthMethod.NONE for FastMCP transports."
+            )
+            raise ValueError(msg)
 
         try:
             from mcp.server.fastmcp import FastMCP
