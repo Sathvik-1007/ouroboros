@@ -583,9 +583,10 @@ class MCPServerAdapter:
                         normalized_kwargs.setdefault(key, value)
 
                     # Route through call_tool() to enforce security checks.
-                    # Note: FastMCP does not provide credentials, so auth will use
-                    # default AuthMethod.NONE behavior and rate limiting will not
-                    # apply (requires client_id). Input validation is enforced.
+                    # FastMCP does not provide credentials, so:
+                    # - Input validation is enforced
+                    # - Auth/authorization will reject if any auth method configured
+                    # - Rate limiting cannot apply (requires client_id)
                     result = await self.call_tool(h.definition.name, normalized_kwargs)
                     if result.is_ok:
                         # Convert MCPToolResult to FastMCP format

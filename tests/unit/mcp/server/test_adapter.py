@@ -509,3 +509,62 @@ class TestServeTransport:
         # FastMCP does not provide credentials, so auth check fails
         with pytest.raises(RuntimeError, match="Authentication required"):
             await captured_wrapper(input="safe_input")
+
+    @pytest.mark.asyncio
+    async def test_fastmcp_path_with_optional_auth_still_fails(self):
+        """FastMCP wrapper fails even when auth is optional.
+
+        This test documents that even with required=False, FastMCP calls
+        fail because the configured auth method still evaluates the request
+        and rejects missing credentials.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from ouroboros.mcp.server.security import AuthConfig, AuthMethod
+
+        # Create adapter with optional API key auth
+        auth_config = AuthConfig(
+            method=AuthMethod.API_KEY,
+            api_keys=frozenset(["valid-key"]),
+            required=False,  # Auth is optional
+        )
+        adapter = MCPServerAdapter(auth_config=auth_config)
+        adapter.register_tool(MockToolHandler(name="secure_tool"))
+
+        mock_fastmcp_cls = MagicMock()
+        mock_instance = MagicMock()
+        captured_wrapper = None
+
+        def capture_tool_decorator(name, description):
+            """Capture the tool wrapper function."""
+
+            def decorator(func):
+                nonlocal captured_wrapper
+                captured_wrapper = func
+                return func
+
+            return decorator
+
+        mock_instance.tool = capture_tool_decorator
+        mock_instance.resource = MagicMock(return_value=lambda f: f)
+        mock_instance.run_stdio_async = AsyncMock()
+        mock_fastmcp_cls.return_value = mock_instance
+
+        with (
+            patch(
+                "ouroboros.mcp.server.adapter.FastMCP",
+                mock_fastmcp_cls,
+                create=True,
+            ),
+            patch.dict(
+                "sys.modules",
+                {"mcp.server.fastmcp": MagicMock(FastMCP=mock_fastmcp_cls)},
+            ),
+        ):
+            await adapter.serve(transport="stdio")
+
+        assert captured_wrapper is not None
+
+        # Even with required=False, authorization requires authentication
+        with pytest.raises(RuntimeError, match="Authentication required for tool"):
+            await captured_wrapper(input="safe_input")
