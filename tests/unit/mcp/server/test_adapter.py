@@ -483,6 +483,8 @@ class TestServeTransport:
         trigger the guard, since NONE always allows access regardless of
         the required flag.
         """
+        from unittest.mock import MagicMock, patch
+
         from ouroboros.mcp.server.security import AuthConfig, AuthMethod
 
         # required=True with method=NONE should not trigger guard
@@ -493,8 +495,26 @@ class TestServeTransport:
         adapter = MCPServerAdapter(auth_config=auth_config)
         adapter.register_tool(MockToolHandler(name="test_tool"))
 
-        # Should not raise - method is NONE so credentials not needed
-        # (We just verify serve() doesn't reject; actual serving is mocked elsewhere)
+        mock_fastmcp_cls = MagicMock()
+        mock_instance = MagicMock()
+        mock_instance.tool = MagicMock(return_value=lambda f: f)
+        mock_instance.resource = MagicMock(return_value=lambda f: f)
+        mock_instance.run_stdio_async = AsyncMock()
+        mock_fastmcp_cls.return_value = mock_instance
+
+        with (
+            patch(
+                "ouroboros.mcp.server.adapter.FastMCP",
+                mock_fastmcp_cls,
+                create=True,
+            ),
+            patch.dict(
+                "sys.modules",
+                {"mcp.server.fastmcp": MagicMock(FastMCP=mock_fastmcp_cls)},
+            ),
+        ):
+            # Should not raise - method is NONE so guard passes
+            await adapter.serve(transport="stdio")
 
     @pytest.mark.asyncio
     async def test_fastmcp_rejects_rate_limit_config(self):
