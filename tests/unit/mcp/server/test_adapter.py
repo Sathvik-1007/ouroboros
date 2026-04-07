@@ -402,3 +402,51 @@ class TestServeTransport:
             await adapter.serve(transport="sse", host="localhost", port=0)
 
         assert mock_fastmcp_cls.call_args.kwargs["port"] == 0
+
+    @pytest.mark.asyncio
+    async def test_fastmcp_path_enforces_security(self):
+        """FastMCP tool wrapper routes through call_tool to enforce security checks."""
+        from unittest.mock import MagicMock, patch
+
+        # Create adapter with no auth but input validation enabled (default)
+        adapter = MCPServerAdapter()
+        adapter.register_tool(MockToolHandler(name="secure_tool"))
+
+        mock_fastmcp_cls = MagicMock()
+        mock_instance = MagicMock()
+        captured_wrapper = None
+
+        def capture_tool_decorator(name, description):
+            """Capture the tool wrapper function."""
+
+            def decorator(func):
+                nonlocal captured_wrapper
+                captured_wrapper = func
+                return func
+
+            return decorator
+
+        mock_instance.tool = capture_tool_decorator
+        mock_instance.resource = MagicMock(return_value=lambda f: f)
+        mock_instance.run_stdio_async = AsyncMock()
+        mock_fastmcp_cls.return_value = mock_instance
+
+        with (
+            patch(
+                "ouroboros.mcp.server.adapter.FastMCP",
+                mock_fastmcp_cls,
+                create=True,
+            ),
+            patch.dict(
+                "sys.modules",
+                {"mcp.server.fastmcp": MagicMock(FastMCP=mock_fastmcp_cls)},
+            ),
+        ):
+            await adapter.serve(transport="stdio")
+
+        # Verify wrapper was captured
+        assert captured_wrapper is not None
+
+        # Test: Path traversal should be rejected by input validation
+        with pytest.raises(RuntimeError, match="Path traversal detected"):
+            await captured_wrapper(input="../../../etc/passwd")

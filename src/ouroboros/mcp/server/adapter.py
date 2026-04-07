@@ -582,7 +582,9 @@ class MCPServerAdapter:
                     for key, value in kwargs.items():
                         normalized_kwargs.setdefault(key, value)
 
-                    result = await h.handle(normalized_kwargs)
+                    # Route through call_tool() to enforce security checks
+                    # (auth, rate limiting, input validation)
+                    result = await self.call_tool(h.definition.name, normalized_kwargs)
                     if result.is_ok:
                         # Convert MCPToolResult to FastMCP format
                         tool_result = result.value
