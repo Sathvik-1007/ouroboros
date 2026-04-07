@@ -790,7 +790,7 @@ def create_ouroboros_server(
 
     # Create state directory for interviews
     if state_dir is None:
-        state_dir = Path.cwd() / ".ouroboros" / "data"
+        state_dir = Path.home() / ".ouroboros" / "data"
     state_dir.mkdir(parents=True, exist_ok=True)
 
     # Create core service instances

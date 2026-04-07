@@ -407,19 +407,19 @@ def serve(
             )
         )
     except KeyboardInterrupt:
-        print_info("\nMCP Server stopped")
+        _stderr_console.print("[blue]MCP Server stopped[/blue]")
     except ImportError as e:
-        print_error(f"MCP dependencies not installed: {e}")
-        print_info("Install with: uv add mcp")
+        _stderr_console.print(f"[red]MCP dependencies not installed: {e}[/red]")
+        _stderr_console.print("[blue]Install with: uv add mcp[/blue]")
         raise typer.Exit(1) from e
     except OSError as e:
-        print_error(f"MCP Server failed to start: {e}")
-        print_info(
-            "If this keeps happening, try:\n"
+        _stderr_console.print(f"[red]MCP Server failed to start: {e}[/red]")
+        _stderr_console.print(
+            "[blue]If this keeps happening, try:\n"
             "  1. Check if another MCP server is running: cat ~/.ouroboros/mcp-server.pid\n"
             "  2. Kill stale process: kill $(cat ~/.ouroboros/mcp-server.pid)\n"
             "  3. Remove stale PID: rm ~/.ouroboros/mcp-server.pid\n"
-            "  4. Restart your MCP client"
+            "  4. Restart your MCP client[/blue]"
         )
         raise typer.Exit(1) from e
 
